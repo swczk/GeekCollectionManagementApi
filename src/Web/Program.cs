@@ -10,6 +10,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using Web.Models;
+using Microsoft.AspNetCore.Mvc;
+using Application.DTO;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,63 +24,82 @@ var keyBytes = Encoding.UTF8.GetBytes(builder.Configuration.GetSection("AppSetti
 
 builder.Services.AddAuthentication(options =>
 {
-   options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-   options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+	options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+	options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 })
 .AddJwtBearer(options =>
 {
-   options.TokenValidationParameters = new TokenValidationParameters
-   {
-      ValidateIssuerSigningKey = true,
-      ValidateIssuer = false,
-      ValidateAudience = false,
-      IssuerSigningKey = new SymmetricSecurityKey(keyBytes)
-   };
+	options.TokenValidationParameters = new TokenValidationParameters
+	{
+		ValidateIssuerSigningKey = true,
+		ValidateIssuer = false,
+		ValidateAudience = false,
+		IssuerSigningKey = new SymmetricSecurityKey(keyBytes)
+	};
 });
 
 builder.Services.AddAuthorization();
 
 // Swagger Configuration
-builder.Services.AddSwaggerGen(c =>
+builder.Services.AddSwaggerGen(config =>
 {
-   c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-   {
-      Description = "JWT Authorization header usando o esquema Bearer. \r\n\r\n" +
-                 "Digite 'Bearer' [espaço] e então seu token na entrada de texto abaixo.\r\n\r\n" +
-                 "Exemplo: 'Bearer 12345abcdef'",
-      Name = "Authorization",
-      In = ParameterLocation.Header,
-      Type = SecuritySchemeType.ApiKey,
-      Scheme = "Bearer"
-   });
-   c.AddSecurityRequirement(new OpenApiSecurityRequirement()
-   {
-      {
-         new OpenApiSecurityScheme
-         {
-            Reference = new OpenApiReference
-            {
-               Type = ReferenceType.SecurityScheme,
-               Id = "Bearer"
-            },
-            Scheme = "oauth2",
-            Name = "Bearer",
-            In = ParameterLocation.Header,
-         },
-         new List<string>()
-      }
-   });
+	config.SwaggerDoc("v1", new OpenApiInfo()
+	{
+		Version = "v1",
+		Title = "GeekCollection API",
+		TermsOfService = new Uri("https://example.com/terms"),
+		Description = "Api GeekCollection para geeks/nerds organizarem suas coleções.",
+		Contact = new OpenApiContact()
+		{
+			Name = "Pedro Sawczuk",
+			Email = "pedrojosawczuk@gmail.com",
+			Url = new Uri("https://www.linkedin.com/in/swczk/")
+		},
+	});
+	config.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+	{
+		Description = "JWT Authorization header usando o esquema Bearer. \r\n\r\n" +
+				"Digite 'Bearer' [espaço] e então seu token na entrada de texto abaixo.\r\n\r\n" +
+				"Exemplo: 'Bearer 12345abcdef'",
+		Name = "Authorization",
+		In = ParameterLocation.Header,
+		Type = SecuritySchemeType.ApiKey,
+		Scheme = "Bearer"
+	});
+	config.AddSecurityRequirement(new OpenApiSecurityRequirement()
+	{
+		{
+			new OpenApiSecurityScheme
+			{
+				Reference = new OpenApiReference
+				{
+					Type = ReferenceType.SecurityScheme,
+					Id = "Bearer"
+				},
+				Scheme = "oauth2",
+				Name = "Bearer",
+				In = ParameterLocation.Header,
+			},
+			new List<string>()
+		}
+	});
 });
 
 builder.Host.UseSerilog((context, loggerConfiguration) =>
-   loggerConfiguration.ReadFrom.Configuration(context.Configuration));
+	loggerConfiguration.ReadFrom.Configuration(context.Configuration));
+
+// Configurar o JSON Serializer para lidar com ciclos de referência
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+	options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.Preserve;
+});
 
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-   app.UseSwagger();
-   app.UseSwaggerUI(Style.Dark);
+	app.UseSwagger();
+	app.UseSwaggerUI(Style.Dark);
 }
 
 app.UseSerilogRequestLogging();
@@ -89,281 +110,440 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapPost("/login", async (LoginModel userLogin, DBContext db) =>
+app.MapPost("/user/login", async (LoginModel userLogin, DBContext db) =>
 {
-   var user = await db.Users.FirstOrDefaultAsync(u => u.Email == userLogin.Email);
+	var user = await db.Users.FirstOrDefaultAsync(u => u.Email == userLogin.Email);
 
-   if (user == null || !BCrypt.Net.BCrypt.Verify(userLogin.Password, user.Password))
-   {
-      return Results.Unauthorized();
-   }
+	if (user == null || !BCrypt.Net.BCrypt.Verify(userLogin.Password, user.Password))
+	{
+		return Results.Unauthorized();
+	}
 
-   var tokenHandler = new JwtSecurityTokenHandler();
-   var tokenDescriptor = new SecurityTokenDescriptor
-   {
-      Subject = new ClaimsIdentity(new[]
-      {
-         new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-         new Claim(ClaimTypes.Email, user.Email)
-      }),
-      Expires = DateTime.UtcNow.AddHours(1),
-      SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(keyBytes), SecurityAlgorithms.HmacSha256Signature)
-   };
+	var tokenHandler = new JwtSecurityTokenHandler();
+	var tokenDescriptor = new SecurityTokenDescriptor
+	{
+		Subject = new ClaimsIdentity(new[]
+		{
+			new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+			new Claim(ClaimTypes.Email, user.Email)
+		}),
+		Expires = DateTime.UtcNow.AddHours(1),
+		SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(keyBytes), SecurityAlgorithms.HmacSha256Signature)
+	};
 
-   var token = tokenHandler.CreateToken(tokenDescriptor);
-   var tokenString = tokenHandler.WriteToken(token);
+	var token = tokenHandler.CreateToken(tokenDescriptor);
+	var tokenString = tokenHandler.WriteToken(token);
 
-   return Results.Ok(new { Token = tokenString });
+	return Results.Ok(new { Token = tokenString });
 })
 .WithName("Login")
 .WithOpenApi();
 
-app.MapPost("/register", async (RegisterModel userRegister, DBContext db) =>
+app.MapPost("/user/register", async (RegisterModel userRegister, DBContext db) =>
 {
-   var existingUser = await db.Users.FirstAsync(u => u.Email == userRegister.Email);
+	var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Email == userRegister.Email);
 
-   if (existingUser != null)
-   {
-      return Results.Conflict("Usuário já existe.");
-   }
+	if (existingUser != null)
+	{
+		return Results.Conflict("Usuário já existe.");
+	}
 
-   var hashedPassword = BCrypt.Net.BCrypt.HashPassword(userRegister.Password);
+	var hashedPassword = BCrypt.Net.BCrypt.HashPassword(userRegister.Password);
 
-   var newUser = new User
-   {
-      Username = userRegister.Username,
-      Email = userRegister.Email,
-      Password = hashedPassword,
-   };
+	var newUser = new User
+	{
+		Username = userRegister.Username,
+		Email = userRegister.Email,
+		Password = hashedPassword,
+	};
 
-   db.Users.Add(newUser);
-   await db.SaveChangesAsync();
+	db.Users.Add(newUser);
+	await db.SaveChangesAsync();
 
-   return Results.Ok("Usuário registrado com sucesso.");
+	return Results.Ok("Usuário registrado com sucesso.");
 })
 .WithName("RegisterUser")
 .WithOpenApi();
 
-app.MapGet("/verify", [Authorize] () =>
+app.MapGet("/user/verify", [Authorize] () =>
 {
-   return Results.Ok();
+	return Results.Ok();
 })
 .WithName("VerifyToken")
+.WithOpenApi();
+
+app.MapPut("/user/update", [Authorize] async ([FromBody] UpdateProfileDto updatedProfile, DBContext db, HttpContext httpContext) =>
+{
+	if (!int.TryParse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+	{
+		return Results.Unauthorized();
+	}
+
+	var existingUser = await db.Users.FindAsync(userId);
+
+	if (existingUser == null)
+	{
+		return Results.NotFound("Usuário não encontrado.");
+	}
+
+	existingUser.Username = updatedProfile.Username ?? existingUser.Username;
+	existingUser.Email = updatedProfile.Email ?? existingUser.Email;
+	existingUser.Password = !string.IsNullOrEmpty(updatedProfile.Password)
+		? BCrypt.Net.BCrypt.HashPassword(updatedProfile.Password)
+		: existingUser.Password;
+
+	db.Users.Update(existingUser);
+	await db.SaveChangesAsync();
+
+	return Results.Ok("Perfil atualizado com sucesso.");
+})
+.WithName("UpdateProfile")
 .WithOpenApi();
 
 // Collections Endpoints
 app.MapGet("/collections", [Authorize] async (DBContext db, HttpContext httpContext) =>
 {
-   if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
-   {
-      return Results.Unauthorized();
-   }
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
+	{
+		return Results.Unauthorized();
+	}
 
-   var collections = await db.Collections
-      .Where(c => c.UserId == userId)
-      .ToListAsync();
+	var collections = await db.Collections
+		.Where(c => c.UserId == userId)
+		.ToListAsync();
 
-   return Results.Ok(collections);
+	return Results.Ok(collections);
 })
 .WithName("GetAllCollections")
 .WithOpenApi();
 
 app.MapGet("/collections/{id}", [Authorize] async (int id, DBContext db, HttpContext httpContext) =>
 {
-   if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
-   {
-      return Results.Unauthorized();
-   }
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value, out var userId))
+	{
+		return Results.Unauthorized();
+	}
 
-   var collection = await db.Collections
-      .FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);
+	var collection = await db.Collections
+		.Include(c => c.Items)
+		.ThenInclude(i => i.Category)
+		.Include(c => c.Shares)
+		.ThenInclude(s => s.SharedWithUser)
+		.FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);
 
-   if (collection == null)
-   {
-      return Results.NotFound();
-   }
+	if (collection == null)
+	{
+		return Results.NotFound();
+	}
 
-   return Results.Ok(collection);
+	var collectionDto = new CollectionDto
+	{
+		Id = collection.Id,
+		Name = collection.Name,
+		Description = collection.Description,
+		UserId = collection.UserId,
+		Items = collection.Items.Select(i => new ItemDto
+		{
+			Id = i.Id,
+			Name = i.Name,
+			CategoryId = i.CategoryId,
+			Description = i.Description,
+			Condition = i.Condition,
+			Category = new CategoryDto
+			{
+				Id = i.Category.Id,
+				Name = i.Category.Name
+			}
+		}).ToList(),
+		Shares = collection.Shares.Select(s => new ShareDto
+		{
+			Id = s.Id,
+			SharedWithUserId = s.SharedWithUserId,
+			User = new UserDto
+			{
+				Id = s.SharedWithUser.Id,
+				Username = s.SharedWithUser.Username,
+				Email = s.SharedWithUser.Email
+			}
+		}).ToList()
+	};
+
+	return Results.Ok(collectionDto);
 })
 .WithName("GetCollectionById")
 .WithOpenApi();
 
-app.MapPost("/collections", [Authorize] async (Collection collection, DBContext db, HttpContext httpContext) =>
+app.MapPost("/collections", [Authorize] async (CollectionCreateDto createModel, DBContext db, HttpContext httpContext) =>
 {
-   if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
-   {
-      return Results.Unauthorized();
-   }
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value, out var userId))
+	{
+		return Results.Unauthorized();
+	}
 
-   collection.UserId = userId;
+	var collection = new Collection
+	{
+		Name = createModel.Name,
+		Description = createModel.Description,
+		UserId = userId
+	};
 
-   db.Collections.Add(collection);
-   await db.SaveChangesAsync();
+	db.Collections.Add(collection);
+	await db.SaveChangesAsync();
 
-   return Results.Created($"/collections/{collection.Id}", collection);
+	return Results.Created($"/collections/{collection.Id}", collection);
 })
 .WithName("CreateCollection")
 .WithOpenApi();
 
-app.MapPut("/collections/{id}", [Authorize] async (int id, Collection updatedCollection, DBContext db, HttpContext httpContext) =>
+app.MapPut("/collections/{id}", [Authorize] async (int id, CollectionUpdateDto updatedCollection, DBContext db, HttpContext httpContext) =>
 {
-   if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
-   {
-      return Results.Unauthorized();
-   }
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value, out var userId))
+	{
+		return Results.Unauthorized();
+	}
 
-   var collection = await db.Collections
-      .FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);
+	var collection = await db.Collections
+		.FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);
 
-   if (collection == null)
-   {
-      return Results.NotFound();
-   }
+	if (collection == null)
+	{
+		return Results.NotFound("Coleção não encontrada ou você não tem permissão para editá-la.");
+	}
 
-   collection.Name = updatedCollection.Name;
-   collection.Description = updatedCollection.Description;
+	collection.Name = updatedCollection.Name;
+	collection.Description = updatedCollection.Description;
 
-   db.Collections.Update(collection);
-   await db.SaveChangesAsync();
+	db.Collections.Update(collection);
+	await db.SaveChangesAsync();
 
-   return Results.NoContent();
+	return Results.NoContent();
 })
 .WithName("UpdateCollection")
 .WithOpenApi();
 
 app.MapDelete("/collections/{id}", [Authorize] async (int id, DBContext db, HttpContext httpContext) =>
 {
-   if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
-   {
-      return Results.Unauthorized();
-   }
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
+	{
+		return Results.Unauthorized();
+	}
 
-   var collection = await db.Collections
-      .FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);
+	var collection = await db.Collections
+		.FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);
 
-   if (collection == null)
-   {
-      return Results.NotFound();
-   }
+	if (collection == null)
+	{
+		return Results.NotFound();
+	}
 
-   db.Collections.Remove(collection);
-   await db.SaveChangesAsync();
+	db.Collections.Remove(collection);
+	await db.SaveChangesAsync();
 
-   return Results.NoContent();
+	return Results.NoContent();
 })
 .WithName("DeleteCollection")
 .WithOpenApi();
 
-// Items Endpoints
-app.MapGet("/collections/{collectionId}/items", [Authorize] async (int collectionId, DBContext db, HttpContext httpContext) =>
+app.MapPost("/collections/{collectionId}/items", [Authorize] async (int collectionId, ItemCreateDto createModel, DBContext db, HttpContext httpContext) =>
 {
-   if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
-   {
-      return Results.Unauthorized();
-   }
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value, out var userId))
+	{
+		return Results.Unauthorized();
+	}
 
-   var items = await db.Items
-      .Where(i => i.CollectionId == collectionId && i.Collection.UserId == userId)
-      .ToListAsync();
+	var collection = await db.Collections
+		.FirstOrDefaultAsync(c => c.Id == collectionId && c.UserId == userId);
 
-   return Results.Ok(items);
-})
-.WithName("GetAllItems")
-.WithOpenApi();
+	if (collection == null)
+	{
+		return Results.NotFound("Coleção não encontrada.");
+	}
 
-app.MapGet("/collections/{collectionId}/items/{itemId}", [Authorize] async (int collectionId, int itemId, DBContext db, HttpContext httpContext) =>
-{
-   if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
-   {
-      return Results.Unauthorized();
-   }
+	var item = new Item
+	{
+		Name = createModel.Name,
+		CategoryId = createModel.CategoryId,
+		Description = createModel.Description,
+		Condition = createModel.Condition,
+		CollectionId = collectionId
+	};
 
-   var item = await db.Items
-      .FirstOrDefaultAsync(i => i.Id == itemId && i.CollectionId == collectionId && i.Collection.UserId == userId);
+	db.Items.Add(item);
+	await db.SaveChangesAsync();
 
-   if (item == null)
-   {
-      return Results.NotFound();
-   }
+	var itemDto = new ItemDto
+	{
+		Id = item.Id,
+		Name = item.Name,
+		CategoryId = item.CategoryId,
+		Description = item.Description,
+		Condition = item.Condition
+	};
 
-   return Results.Ok(item);
-})
-.WithName("GetItemById")
-.WithOpenApi();
-
-app.MapPost("/collections/{collectionId}/items", [Authorize] async (int collectionId, Item item, DBContext db, HttpContext httpContext) =>
-{
-   if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
-   {
-      return Results.Unauthorized();
-   }
-
-   var collection = await db.Collections
-      .FirstOrDefaultAsync(c => c.Id == collectionId && c.UserId == userId);
-
-   if (collection == null)
-   {
-      return Results.NotFound();
-   }
-
-   item.CollectionId = collectionId;
-
-   db.Items.Add(item);
-   await db.SaveChangesAsync();
-
-   return Results.Created($"/collections/{collectionId}/items/{item.Id}", item);
+	return Results.Created($"/collections/{collectionId}/items/{item.Id}", itemDto);
 })
 .WithName("CreateItem")
 .WithOpenApi();
 
 app.MapPut("/collections/{collectionId}/items/{itemId}", [Authorize] async (int collectionId, int itemId, Item updatedItem, DBContext db, HttpContext httpContext) =>
 {
-   if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
-   {
-      return Results.Unauthorized();
-   }
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
+	{
+		return Results.Unauthorized();
+	}
 
-   var item = await db.Items
-      .FirstOrDefaultAsync(i => i.Id == itemId && i.CollectionId == collectionId && i.Collection.UserId == userId);
+	var item = await db.Items
+		.FirstOrDefaultAsync(i => i.Id == itemId && i.CollectionId == collectionId && i.Collection.UserId == userId);
 
-   if (item == null)
-   {
-      return Results.NotFound();
-   }
+	if (item == null)
+	{
+		return Results.NotFound();
+	}
 
-   item.Name = updatedItem.Name;
-   item.Description = updatedItem.Description;
+	item.Name = updatedItem.Name;
+	item.Description = updatedItem.Description;
 
-   db.Items.Update(item);
-   await db.SaveChangesAsync();
+	db.Items.Update(item);
+	await db.SaveChangesAsync();
 
-   return Results.NoContent();
+	return Results.NoContent();
 })
 .WithName("UpdateItem")
 .WithOpenApi();
 
 app.MapDelete("/collections/{collectionId}/items/{itemId}", [Authorize] async (int collectionId, int itemId, DBContext db, HttpContext httpContext) =>
 {
-   if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
-   {
-      return Results.Unauthorized();
-   }
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
+	{
+		return Results.Unauthorized();
+	}
 
-   var item = await db.Items
-      .FirstOrDefaultAsync(i => i.Id == itemId && i.CollectionId == collectionId && i.Collection.UserId == userId);
+	var item = await db.Items
+		.FirstOrDefaultAsync(i => i.Id == itemId && i.CollectionId == collectionId && i.Collection.UserId == userId);
 
-   if (item == null)
-   {
-      return Results.NotFound();
-   }
+	if (item == null)
+	{
+		return Results.NotFound();
+	}
 
-   db.Items.Remove(item);
-   await db.SaveChangesAsync();
+	db.Items.Remove(item);
+	await db.SaveChangesAsync();
 
-   return Results.NoContent();
+	return Results.NoContent();
 })
 .WithName("DeleteItem")
 .WithOpenApi();
 
+app.MapGet("/categories", async (DBContext db) =>
+{
+	var categories = await db.Categories
+		.Select(c => new
+		{
+			Id = c.Id,
+			Name = c.Name
+		})
+		.ToListAsync();
+
+	return Results.Ok(categories);
+})
+.WithName("GetAllCategories")
+.WithOpenApi();
+
+app.MapGet("/collections/shares", [Authorize] async (DBContext db, HttpContext httpContext) =>
+{
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
+	{
+		return Results.Unauthorized();
+	}
+
+	var sharedCollections = await db.Shares
+		.Where(s => s.SharedWithUserId == userId)
+		.Select(s => s.Collection)
+		.ToListAsync();
+
+	if (sharedCollections == null || !sharedCollections.Any())
+	{
+		return Results.NotFound("Nenhuma coleção compartilhada encontrada.");
+	}
+
+	return Results.Ok(sharedCollections);
+})
+.WithName("GetSharedCollections")
+.WithOpenApi();
+
+app.MapPost("/collections/{collectionId}/shares", [Authorize] async (int collectionId, [FromBody] string sharedWithEmail, DBContext db, HttpContext httpContext) =>
+{
+	if (!int.TryParse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+	{
+		return Results.Unauthorized();
+	}
+
+	var collection = await db.Collections
+		.Include(c => c.Shares)
+		.FirstOrDefaultAsync(c => c.Id == collectionId && c.UserId == userId);
+
+	if (collection == null)
+	{
+		return Results.NotFound("Coleção não encontrada ou você não tem permissão para compartilhá-la.");
+	}
+
+	var sharedWithUser = await db.Users
+		.FirstOrDefaultAsync(u => u.Email == sharedWithEmail);
+
+	if (sharedWithUser == null)
+	{
+		return Results.NotFound("Usuário para compartilhar não encontrado.");
+	}
+
+	var existingShare = collection.Shares
+		.Any(s => s.SharedWithUserId == sharedWithUser.Id);
+
+	if (existingShare)
+	{
+		return Results.Conflict("Coleção já compartilhada com o usuário especificado.");
+	}
+
+	var newShare = new Share
+	{
+		CollectionId = collectionId,
+		SharedWithUserId = sharedWithUser.Id
+	};
+
+	db.Shares.Add(newShare);
+	await db.SaveChangesAsync();
+
+	return Results.Ok("Coleção compartilhada com sucesso.");
+})
+.WithName("ShareCollection")
+.WithOpenApi();
+
+app.MapDelete("/collections/{collectionId}/shares/{shareId}", [Authorize] async (int collectionId, int shareId, DBContext db, HttpContext httpContext) =>
+{
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value, out var userId))
+	{
+		return Results.Unauthorized();
+	}
+
+	var share = await db.Shares
+		.Include(s => s.Collection)
+		.FirstOrDefaultAsync(s => s.Id == shareId);
+
+	if (share == null)
+	{
+		return Results.NotFound("Compartilhamento não encontrado.");
+	}
+
+	if (share.Collection.UserId != userId && share.SharedWithUserId != userId)
+	{
+		return Results.Unauthorized();
+	}
+
+	db.Shares.Remove(share);
+	await db.SaveChangesAsync();
+
+	return Results.NoContent();
+})
+.WithName("DeleteShare")
+.WithOpenApi();
 
 app.Run();
