@@ -19,6 +19,17 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<DBContext>();
 
+builder.Services.AddCors(options =>
+{
+	options.AddDefaultPolicy(
+		policy =>
+		{
+			policy.AllowAnyOrigin()
+					.AllowAnyHeader()
+					.AllowAnyMethod();
+		});
+});
+
 // JWT Authentication Configuration
 var keyBytes = Encoding.UTF8.GetBytes(builder.Configuration.GetSection("AppSettings:Token").Value!);
 
@@ -101,6 +112,8 @@ if (app.Environment.IsDevelopment())
 	app.UseSwagger();
 	app.UseSwaggerUI(Style.Dark);
 }
+
+app.UseCors();
 
 app.UseSerilogRequestLogging();
 
