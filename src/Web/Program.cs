@@ -222,8 +222,25 @@ app.MapGet("/collections", [Authorize] async (DBContext db, HttpContext httpCont
 	}
 
 	var collections = await db.Collections
-		.Where(c => c.UserId == userId)
-		.ToListAsync();
+		 .Where(c => c.UserId == userId)
+		 .Select(c => new
+		 {
+			 c.Id,
+			 c.Name,
+			 c.Description,
+			 Shares = c.Shares.Select(s => new
+			 {
+				 s.Id,
+				 s.SharedWithUserId,
+				 User = new
+				 {
+					 Id = s.SharedWithUser.Id,
+					 Username = s.SharedWithUser.Username,
+					 Email = s.SharedWithUser.Email
+				 }
+			 }).ToList()
+		 })
+		 .ToListAsync();
 
 	return Results.Ok(collections);
 })
