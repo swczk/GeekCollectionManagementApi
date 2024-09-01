@@ -140,7 +140,7 @@ app.MapPost("/user/login", async (LoginModel userLogin, DBContext db) =>
 			new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
 			new Claim(ClaimTypes.Email, user.Email)
 		}),
-		Expires = DateTime.UtcNow.AddHours(1),
+		Expires = DateTime.UtcNow.AddHours(24),
 		SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(keyBytes), SecurityAlgorithms.HmacSha256Signature)
 	};
 
@@ -204,6 +204,9 @@ app.MapPut("/user/update", [Authorize] async ([FromBody] UpdateProfileDto update
 	existingUser.Password = !string.IsNullOrEmpty(updatedProfile.Password)
 		? BCrypt.Net.BCrypt.HashPassword(updatedProfile.Password)
 		: existingUser.Password;
+	existingUser.ProfilePicture = !string.IsNullOrEmpty(updatedProfile.ProfilePicture)
+		? updatedProfile.ProfilePicture
+		: existingUser.ProfilePicture;
 
 	db.Users.Update(existingUser);
 	await db.SaveChangesAsync();
@@ -211,6 +214,34 @@ app.MapPut("/user/update", [Authorize] async ([FromBody] UpdateProfileDto update
 	return Results.Ok("Perfil atualizado com sucesso.");
 })
 .WithName("UpdateProfile")
+.WithOpenApi();
+
+app.MapGet("/user/profile", [Authorize] async (DBContext db, HttpContext httpContext) =>
+{
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
+	{
+		return Results.Unauthorized();
+	}
+
+	var user = await db.Users
+		 .Where(u => u.Id == userId)
+		 .Select(u => new
+		 {
+			 u.Id,
+			 u.Username,
+			 u.Email,
+			 u.ProfilePicture
+		 })
+		 .FirstOrDefaultAsync();
+
+	if (user == null)
+	{
+		return Results.NotFound();
+	}
+
+	return Results.Ok(user);
+})
+.WithName("GetUser")
 .WithOpenApi();
 
 // Collections Endpoints
@@ -228,6 +259,13 @@ app.MapGet("/collections", [Authorize] async (DBContext db, HttpContext httpCont
 			 c.Id,
 			 c.Name,
 			 c.Description,
+			 User = new
+			 {
+				 Id = c.User.Id,
+				 Username = c.User.Username,
+				 Email = c.User.Email,
+				 ProfilePicture = c.User.ProfilePicture,
+			 },
 			 Shares = c.Shares.Select(s => new
 			 {
 				 s.Id,
@@ -236,7 +274,21 @@ app.MapGet("/collections", [Authorize] async (DBContext db, HttpContext httpCont
 				 {
 					 Id = s.SharedWithUser.Id,
 					 Username = s.SharedWithUser.Username,
-					 Email = s.SharedWithUser.Email
+					 Email = s.SharedWithUser.Email,
+					 ProfilePicture = s.SharedWithUser.ProfilePicture,
+				 }
+			 }).ToList(),
+			 Items = c.Items.Select(i => new ItemDto
+			 {
+				 Id = i.Id,
+				 Name = i.Name,
+				 CategoryId = i.CategoryId,
+				 Description = i.Description,
+				 Condition = i.Condition,
+				 Category = new CategoryDto
+				 {
+					 Id = i.Category.Id,
+					 Name = i.Category.Name
 				 }
 			 }).ToList()
 		 })
@@ -272,28 +324,26 @@ app.MapGet("/collections/{id}", [Authorize] async (int id, DBContext db, HttpCon
 		Name = collection.Name,
 		Description = collection.Description,
 		UserId = collection.UserId,
+		Shares = collection.Shares.Select(s => new ShareDto
+		{
+			Id = s.Id,
+			User = new UserDto
+			{
+				Id = s.SharedWithUser.Id,
+				Username = s.SharedWithUser.Username,
+				Email = s.SharedWithUser.Email
+			}
+		}).ToList(),
 		Items = collection.Items.Select(i => new ItemDto
 		{
 			Id = i.Id,
 			Name = i.Name,
-			CategoryId = i.CategoryId,
 			Description = i.Description,
 			Condition = i.Condition,
 			Category = new CategoryDto
 			{
 				Id = i.Category.Id,
 				Name = i.Category.Name
-			}
-		}).ToList(),
-		Shares = collection.Shares.Select(s => new ShareDto
-		{
-			Id = s.Id,
-			SharedWithUserId = s.SharedWithUserId,
-			User = new UserDto
-			{
-				Id = s.SharedWithUser.Id,
-				Username = s.SharedWithUser.Username,
-				Email = s.SharedWithUser.Email
 			}
 		}).ToList()
 	};
@@ -489,6 +539,44 @@ app.MapGet("/collections/shares", [Authorize] async (DBContext db, HttpContext h
 	var sharedCollections = await db.Shares
 		.Where(s => s.SharedWithUserId == userId)
 		.Select(s => s.Collection)
+		 .Select(c => new
+		 {
+			 c.Id,
+			 c.Name,
+			 c.Description,
+			 User = new
+			 {
+				 Id = c.User.Id,
+				 Username = c.User.Username,
+				 Email = c.User.Email,
+				 ProfilePicture = c.User.ProfilePicture,
+			 },
+			 Shares = c.Shares.Select(s => new
+			 {
+				 s.Id,
+				 s.SharedWithUserId,
+				 User = new
+				 {
+					 Id = s.SharedWithUser.Id,
+					 Username = s.SharedWithUser.Username,
+					 Email = s.SharedWithUser.Email,
+					 ProfilePicture = s.SharedWithUser.ProfilePicture,
+				 }
+			 }).ToList(),
+			 Items = c.Items.Select(i => new ItemDto
+			 {
+				 Id = i.Id,
+				 Name = i.Name,
+				 CategoryId = i.CategoryId,
+				 Description = i.Description,
+				 Condition = i.Condition,
+				 Category = new CategoryDto
+				 {
+					 Id = i.Category.Id,
+					 Name = i.Category.Name
+				 }
+			 }).ToList()
+		 })
 		.ToListAsync();
 
 	if (sharedCollections == null || !sharedCollections.Any())
