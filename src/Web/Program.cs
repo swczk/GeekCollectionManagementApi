@@ -465,7 +465,7 @@ app.MapPost("/collections/{collectionId}/items", [Authorize] async (int collecti
 .WithName("CreateItem")
 .WithOpenApi();
 
-app.MapPut("/collections/{collectionId}/items/{itemId}", [Authorize] async (int collectionId, int itemId, Item updatedItem, DBContext db, HttpContext httpContext) =>
+app.MapPut("/collections/{collectionId}/items/{itemId}", [Authorize] async (int collectionId, int itemId, ItemUpdateDto updatedItem, DBContext db, HttpContext httpContext) =>
 {
 	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)!.Value, out var userId))
 	{
@@ -479,9 +479,16 @@ app.MapPut("/collections/{collectionId}/items/{itemId}", [Authorize] async (int 
 	{
 		return Results.NotFound();
 	}
+	var categoryExists = await db.Categories.FirstOrDefaultAsync(c => c.Id == item.CategoryId);
+	if (categoryExists?.Id == 0)
+	{
+		return Results.BadRequest();
+	}
 
 	item.Name = updatedItem.Name;
+	item.CategoryId = updatedItem.CategoryId;
 	item.Description = updatedItem.Description;
+	item.Condition = updatedItem.Condition;
 
 	db.Items.Update(item);
 	await db.SaveChangesAsync();
