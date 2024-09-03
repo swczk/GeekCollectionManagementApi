@@ -1,0 +1,28 @@
+version: '3.9'
+
+services:
+  geek.api:
+    image: geek-api:latest
+    container_name: geek-api
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: America/Sao_Paulo
+      ConnectionStrings__DefaultConnection: "Server=localhost;Database=geekdb;User=root;Password=toor;"
+      AppSettings__Token__Key: "this_is_a_very_long_secret_key_for_jwt_authentication_purposes_and_should_be_at_least_32_characters_long"
+      AppSettings__Token__Expires: 24
+    ports:
+      - 5002:8080
+    network_mode: "host"
+    restart: always
+  # db:
+  #   image: lscr.io/linuxserver/mariadb:latest
+  #   container_name: db
+  #   ports:
+  #     - "3306:3306"
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #     - TZ=America/Sao_Paulo
+  #     - MYSQL_ROOT_PASSWORD=toor
+  #   restart: always

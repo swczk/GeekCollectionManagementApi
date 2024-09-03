@@ -31,7 +31,7 @@ builder.Services.AddCors(options =>
 });
 
 // JWT Authentication Configuration
-var keyBytes = Encoding.UTF8.GetBytes(builder.Configuration.GetSection("AppSettings:Token").Value!);
+var keyBytes = Encoding.UTF8.GetBytes(builder.Configuration.GetSection("AppSettings:Token:Key").Value!);
 
 builder.Services.AddAuthentication(options =>
 {
@@ -131,6 +131,9 @@ app.MapPost("/user/login", async (LoginModel userLogin, DBContext db) =>
 	{
 		return Results.Unauthorized();
 	}
+	string tokenExpiryString = builder.Configuration.GetSection("AppSettings:Token:Expires").Value!;
+	bool isParsed = double.TryParse(tokenExpiryString, out double tokenExpiryHours);
+	double expiryInHours = isParsed ? tokenExpiryHours : 24;
 
 	var tokenHandler = new JwtSecurityTokenHandler();
 	var tokenDescriptor = new SecurityTokenDescriptor
@@ -140,7 +143,7 @@ app.MapPost("/user/login", async (LoginModel userLogin, DBContext db) =>
 			new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
 			new Claim(ClaimTypes.Email, user.Email)
 		}),
-		Expires = DateTime.UtcNow.AddHours(24),
+		Expires = DateTime.UtcNow.AddHours(expiryInHours),
 		SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(keyBytes), SecurityAlgorithms.HmacSha256Signature)
 	};
 
