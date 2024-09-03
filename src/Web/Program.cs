@@ -599,8 +599,15 @@ app.MapGet("/collections/shares", [Authorize] async (DBContext db, HttpContext h
 .WithName("GetSharedCollections")
 .WithOpenApi();
 
-app.MapPost("/collections/{collectionId}/shares", [Authorize] async (int collectionId, [FromBody] string sharedWithEmail, DBContext db, HttpContext httpContext) =>
+app.MapPost("/collections/{collectionId}/shares", [Authorize] async (int collectionId, [FromBody] ShareRequest request, DBContext db, HttpContext httpContext) =>
 {
+	if (string.IsNullOrEmpty(request.SharedWithEmail))
+	{
+		return Results.BadRequest();
+	}
+
+	var sharedWithEmail = request.SharedWithEmail;
+
 	if (!int.TryParse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
 	{
 		return Results.Unauthorized();
@@ -645,16 +652,29 @@ app.MapPost("/collections/{collectionId}/shares", [Authorize] async (int collect
 .WithName("ShareCollection")
 .WithOpenApi();
 
-app.MapDelete("/collections/{collectionId}/shares/{shareId}", [Authorize] async (int collectionId, int shareId, DBContext db, HttpContext httpContext) =>
+app.MapDelete("/collections/{collectionId}/shares/{userId}", [Authorize] async (int collectionId, int userId, DBContext db, HttpContext httpContext) =>
 {
-	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value, out var userId))
+	if (!int.TryParse(httpContext.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value, out var currentUserId))
+	{
+		return Results.Unauthorized();
+	}
+
+	var collection = await db.Collections
+		 .FirstOrDefaultAsync(c => c.Id == collectionId);
+
+	if (collection == null)
+	{
+		return Results.NotFound("Coleção não encontrada.");
+	}
+
+	if (collection.UserId != currentUserId)
 	{
 		return Results.Unauthorized();
 	}
 
 	var share = await db.Shares
-		.Include(s => s.Collection)
-		.FirstOrDefaultAsync(s => s.Id == shareId);
+		 .Include(s => s.Collection)
+		 .FirstOrDefaultAsync(s => s.CollectionId == collectionId && s.SharedWithUserId == userId);
 
 	if (share == null)
 	{
