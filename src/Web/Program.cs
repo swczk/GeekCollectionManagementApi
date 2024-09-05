@@ -59,7 +59,7 @@ builder.Services.AddSwaggerGen(config =>
 		Version = "v1",
 		Title = "GeekCollection API",
 		TermsOfService = new Uri("https://example.com/terms"),
-		Description = "Api GeekCollection para geeks/nerds organizarem suas coleções.",
+		Description = "GeekCollection API for geeks/nerds to organize their collections.",
 		Contact = new OpenApiContact()
 		{
 			Name = "Pedro Sawczuk",
@@ -69,9 +69,9 @@ builder.Services.AddSwaggerGen(config =>
 	});
 	config.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
 	{
-		Description = "JWT Authorization header usando o esquema Bearer. \r\n\r\n" +
-				"Digite 'Bearer' [espaço] e então seu token na entrada de texto abaixo.\r\n\r\n" +
-				"Exemplo: 'Bearer 12345abcdef'",
+		Description = "JWT Authorization header using the Bearer scheme. \r\n\r\n" +
+					"Enter 'Bearer' [space] and then your token in the text input below.\r\n\r\n" +
+					"Example: 'Bearer 12345abcdef'",
 		Name = "Authorization",
 		In = ParameterLocation.Header,
 		Type = SecuritySchemeType.ApiKey,
@@ -99,7 +99,7 @@ builder.Services.AddSwaggerGen(config =>
 builder.Host.UseSerilog((context, loggerConfiguration) =>
 	loggerConfiguration.ReadFrom.Configuration(context.Configuration));
 
-// Configurar o JSON Serializer para lidar com ciclos de referência
+// Configure JSON Serializer to handle reference cycles
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
 	options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.Preserve;
@@ -161,7 +161,7 @@ app.MapPost("/user/register", async (RegisterModel userRegister, DBContext db) =
 
 	if (existingUser != null)
 	{
-		return Results.Conflict("Usuário já existe.");
+		return Results.Conflict();
 	}
 
 	var hashedPassword = BCrypt.Net.BCrypt.HashPassword(userRegister.Password);
@@ -176,7 +176,7 @@ app.MapPost("/user/register", async (RegisterModel userRegister, DBContext db) =
 	db.Users.Add(newUser);
 	await db.SaveChangesAsync();
 
-	return Results.Ok("Usuário registrado com sucesso.");
+	return Results.Ok();
 })
 .WithName("RegisterUser")
 .WithOpenApi();
@@ -199,7 +199,7 @@ app.MapPut("/user/update", [Authorize] async ([FromBody] UpdateProfileDto update
 
 	if (existingUser == null)
 	{
-		return Results.NotFound("Usuário não encontrado.");
+		return Results.NotFound("User not found.");
 	}
 
 	existingUser.Username = updatedProfile.Username ?? existingUser.Username;
@@ -214,7 +214,7 @@ app.MapPut("/user/update", [Authorize] async ([FromBody] UpdateProfileDto update
 	db.Users.Update(existingUser);
 	await db.SaveChangesAsync();
 
-	return Results.Ok("Perfil atualizado com sucesso.");
+	return Results.Ok();
 })
 .WithName("UpdateProfile")
 .WithOpenApi();
@@ -318,7 +318,7 @@ app.MapGet("/collections/{id}", [Authorize] async (int id, DBContext db, HttpCon
 
 	if (collection == null)
 	{
-		return Results.NotFound();
+		return Results.NoContent();
 	}
 
 	var collectionDto = new CollectionDto
@@ -390,7 +390,7 @@ app.MapPut("/collections/{id}", [Authorize] async (int id, CollectionUpdateDto u
 
 	if (collection == null)
 	{
-		return Results.NotFound("Coleção não encontrada ou você não tem permissão para editá-la.");
+		return Results.NoContent();
 	}
 
 	collection.Name = updatedCollection.Name;
@@ -439,7 +439,7 @@ app.MapPost("/collections/{collectionId}/items", [Authorize] async (int collecti
 
 	if (collection == null)
 	{
-		return Results.NotFound("Coleção não encontrada.");
+		return Results.NoContent();
 	}
 
 	var item = new Item
@@ -591,7 +591,7 @@ app.MapGet("/collections/shares", [Authorize] async (DBContext db, HttpContext h
 
 	if (sharedCollections == null || !sharedCollections.Any())
 	{
-		return Results.NotFound("Nenhuma coleção compartilhada encontrada.");
+		return Results.NoContent();
 	}
 
 	return Results.Ok(sharedCollections);
@@ -619,7 +619,7 @@ app.MapPost("/collections/{collectionId}/shares", [Authorize] async (int collect
 
 	if (collection == null)
 	{
-		return Results.NotFound("Coleção não encontrada ou você não tem permissão para compartilhá-la.");
+		return Results.NoContent();
 	}
 
 	var sharedWithUser = await db.Users
@@ -627,7 +627,7 @@ app.MapPost("/collections/{collectionId}/shares", [Authorize] async (int collect
 
 	if (sharedWithUser == null)
 	{
-		return Results.NotFound("Usuário para compartilhar não encontrado.");
+		return Results.NotFound();
 	}
 
 	var existingShare = collection.Shares
@@ -635,7 +635,7 @@ app.MapPost("/collections/{collectionId}/shares", [Authorize] async (int collect
 
 	if (existingShare)
 	{
-		return Results.Conflict("Coleção já compartilhada com o usuário especificado.");
+		return Results.Conflict();
 	}
 
 	var newShare = new Share
@@ -647,7 +647,7 @@ app.MapPost("/collections/{collectionId}/shares", [Authorize] async (int collect
 	db.Shares.Add(newShare);
 	await db.SaveChangesAsync();
 
-	return Results.Ok("Coleção compartilhada com sucesso.");
+	return Results.Ok();
 })
 .WithName("ShareCollection")
 .WithOpenApi();
@@ -664,7 +664,7 @@ app.MapDelete("/collections/{collectionId}/shares/{userId}", [Authorize] async (
 
 	if (collection == null)
 	{
-		return Results.NotFound("Coleção não encontrada.");
+		return Results.NotFound();
 	}
 
 	if (collection.UserId != currentUserId)
@@ -678,7 +678,7 @@ app.MapDelete("/collections/{collectionId}/shares/{userId}", [Authorize] async (
 
 	if (share == null)
 	{
-		return Results.NotFound("Compartilhamento não encontrado.");
+		return Results.NotFound();
 	}
 
 	if (share.Collection.UserId != userId && share.SharedWithUserId != userId)
