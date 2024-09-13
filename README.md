@@ -3,7 +3,9 @@
   <h3 align="center"></h3>
 </p>
 
-The Geek Collection Management API is the backend of a web application for managing personal geek/nerd collections, built with Microsoft .NET SDK targeting .NET 8.0. The API uses JSON Web Tokens (JWT) for user authentication and data protection.
+A backend API for managing geek collections, built with .NET 8.0. It provides features like user authentication with JWT, managing collections and shared items, and CRUD operations.
+
+The project uses Docker and Docker Compose for containerization, making it easy to deploy and run the API along with a MariaDB database.
 
 Check out the frontend of the application:
 [Geek Collection App](https://github.com/swczk/geek_collection_app)
